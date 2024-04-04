@@ -14,8 +14,8 @@ import sys
 from typing import TextIO
 
 import click
+from ruamel import yaml
 import tabulate
-import yaml
 
 from kwait import inventory
 from kwait import wait
@@ -115,7 +115,7 @@ def _inventory(
         if fmt == OutputFormat.JSON:
             echo(json.dumps(data, **ctx.obj["json_kwargs"]))
         if fmt == OutputFormat.YAML:
-            echo(yaml.dump(data))
+            echo(yaml.YAML().dump(data))
 
 
 @cli.command("wait")
@@ -205,7 +205,7 @@ def _wait(
                         json.dumps(dataclasses.asdict(update), **ctx.obj["json_kwargs"])
                     )
                 elif fmt == OutputFormat.YAML:
-                    echo(yaml.dump(dataclasses.asdict(update)))
+                    echo(yaml.YAML().dump(dataclasses.asdict(update)))
                 elif update.is_ready:
                     echo(f"{update.resource}: {_ok(update.state)}")
                 else:
@@ -235,4 +235,4 @@ def _wait(
             if fmt == OutputFormat.JSON:
                 echo(json.dumps(data, **ctx.obj["json_kwargs"]))
             elif fmt == OutputFormat.YAML:
-                echo(yaml.dump(data))
+                echo(yaml.YAML().dump(data))
