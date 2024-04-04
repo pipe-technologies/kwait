@@ -254,22 +254,21 @@ class Deployment(AppsV1Driver):
                 )
                 return self.not_ready("replica failure")
 
-            if condition.type == "Progressing" and (
-                condition.status != "True"
-                or condition.reason != "NewReplicaSetAvailable"
-            ):
-                _LOG.debug(
-                    "%s has progressing condition: %s", self.resource, condition.message
-                )
-                return self.not_ready("progressing")
+            if (
+                condition.type == "Progressing"
+                and condition.status == "True"
+                and condition.reason == "NewReplicaSetAvailable"
+            ) or (condition.type == "Available" and condition.status == "True"):
+                continue
 
-            if condition.type == "Available" and condition.status != "True":
-                _LOG.debug(
-                    "%s has not finalized available condition: %s",
-                    self.resource,
-                    condition.message,
-                )
-                return self.not_ready("availability not finalized")
+            _LOG.debug(
+                "%s has %s condition (%s): %s",
+                self.resource,
+                condition.type,
+                condition.reason,
+                condition.message,
+            )
+            return self.not_ready(condition.type.lower())
 
         return self.ready
 
@@ -342,7 +341,7 @@ class PodDisruptionBudget(BaseDriver):
     * status.currentHealthy >= status.desiredHealthy
     """
 
-    api_version = "v1"
+    api_version = "policy/v1"
     kind = "PodDisruptionBudget"
 
     def __init__(
