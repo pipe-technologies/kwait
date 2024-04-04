@@ -103,7 +103,9 @@ def _inventory(
 ) -> None:
     resources = []
     for filehandle in filename:
-        resources.extend(inventory.get_resources(filehandle, namespace=namespace))
+        resources.extend(
+            inventory.get_resources(filehandle, default_namespace=namespace)
+        )
 
     fmt = OutputFormat[output.upper()]
     echo = ctx.obj["echo"]
@@ -163,7 +165,9 @@ def _wait(
 ) -> None:
     resources = []
     for filehandle in filename:
-        resources.extend(inventory.get_resources(filehandle, namespace=namespace))
+        resources.extend(
+            inventory.get_resources(filehandle, default_namespace=namespace)
+        )
 
     fmt = OutputFormat[output.upper()]
     if sys.stdout.isatty() and fmt == OutputFormat.PLAIN:
