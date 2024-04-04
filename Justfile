@@ -1,12 +1,15 @@
 set ignore-comments
 set fallback
 
-lint:
+install:
+    poetry install
+
+lint: install
     poetry run pyright
     poetry run pylint kwait test
     just _check_format
 
-format:
+format: install
     poetry run isort --atomic kwait test
     poetry run black --quiet kwait test
 
@@ -22,5 +25,5 @@ _check_format:
         exit 1; \
     fi
 
-test:
+test: install
     poetry run pytest
