@@ -5,7 +5,7 @@ import dataclasses
 import logging
 from typing import IO
 
-import yaml
+from ruamel import yaml
 
 from kwait import exceptions
 
@@ -29,7 +29,7 @@ def get_resources(
     stream: IO, namespace: str = "default"
 ) -> Generator[ResourceDescriptor, None, None]:
     """Yield all resources that are defined in a stream of k8s manifests."""
-    for manifest in yaml.safe_load_all(stream):
+    for manifest in yaml.Yaml(typ="safe").load_all(stream):
         if not hasattr(manifest, "get"):
             raise exceptions.MalformedManifestError(
                 f"Manifest is not a YAML object: {manifest}"
