@@ -15,7 +15,7 @@ import stevedore
 from kwait import inventory
 
 if TYPE_CHECKING:
-    from kwait import drivers
+    from kwait import drivers  # pragma: nocover
 
 _LOG = logging.getLogger(__name__)
 
@@ -55,8 +55,15 @@ def _wait_for_resource(
             else:
                 _LOG.exception(err)
                 result_queue.put(
-                    ReadyResult(driver.resource, False, f"unexpected error: {err}")
+                    ReadyResult(
+                        driver.resource, False, f"unexpected Kubernetes error: {err}"
+                    )
                 )
+        except Exception as err:  # pylint: disable=broad-exception-caught
+            _LOG.exception(err)
+            result_queue.put(
+                ReadyResult(driver.resource, False, f"unexpected error: {err}")
+            )
         else:
             result_queue.put(is_ready)
 
