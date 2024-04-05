@@ -115,7 +115,7 @@ def test_multiple_resources(fake) -> None:
     expected = []
     manifests = []
 
-    default_ns = "default-ns"  # fake.unique.word()
+    default_ns = fake.unique.word()
 
     api_version = fake.unique.word()
     kind = fake.unique.word()
