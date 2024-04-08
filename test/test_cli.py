@@ -13,6 +13,10 @@ import pytest
 from ruamel import yaml
 
 from kwait import cli
+from kwait import inventory
+from kwait import wait
+
+from . import utils
 
 _LOG = logging.getLogger()
 
@@ -46,6 +50,16 @@ class Manifest:
     namespace: str | None = None
 
     @classmethod
+    def from_resource(cls, resource: inventory.ResourceDescriptor) -> "Manifest":
+        """Get a testable k8s manifest from a `ResourceDescriptor` object."""
+        return cls(
+            resource.api_version,
+            resource.kind,
+            resource.name,
+            resource.namespace,
+        )
+
+    @classmethod
     def get_random(cls, fake, *, include_namespace: bool = True) -> "Manifest":
         """Create a random testable k8s manifest.
 
@@ -57,6 +71,10 @@ class Manifest:
             fake.unique.word(),
             fake.word() if include_namespace else None,
         )
+
+    def write(self, filename: pathlib.Path) -> None:
+        """Write the manifest to a file on disk."""
+        yaml.YAML().dump(self.manifest, stream=filename.open("w"))
 
     @property
     def manifest(self) -> dict[str, Any]:
@@ -85,7 +103,7 @@ class Manifest:
 
 @pytest.mark.parametrize("set_default_namespace", [True, False])
 @pytest.mark.parametrize("include_namespace", [True, False])
-def test_inventory_single_manifest(
+def test_inventory(
     fake,
     tmp_path: pathlib.Path,
     include_namespace: bool,
@@ -93,7 +111,7 @@ def test_inventory_single_manifest(
 ) -> None:
     manifest = Manifest.get_random(fake, include_namespace=include_namespace)
     manifest_file = tmp_path / fake.file_name(extension="yaml")
-    yaml.YAML().dump(manifest.manifest, stream=manifest_file.open("w"))
+    manifest.write(manifest_file)
 
     args = ["inventory", "--output", "json", str(manifest_file)]
     default_ns = fake.unique.word()
@@ -153,7 +171,7 @@ def test_inventory_multiple_files(fake, tmp_path: pathlib.Path) -> None:
     args = ["inventory", "--output", "json"]
     for manifest in manifests:
         manifest_file = tmp_path / fake.unique.file_name(extension="yaml")
-        yaml.YAML().dump(manifest.manifest, stream=manifest_file.open("w"))
+        manifest.write(manifest_file)
         args.append(str(manifest_file))
 
     result = _run(*args)
@@ -172,11 +190,12 @@ def test_inventory_multiple_files(fake, tmp_path: pathlib.Path) -> None:
     )
 
 
-def test_inventory_malformed_file(fake, tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("subcommand", ["inventory", "wait"])
+def test_malformed_file(fake, tmp_path: pathlib.Path, subcommand: str) -> None:
     manifest_file = tmp_path / fake.file_name(extension="yaml")
     manifest_file.open("w").write("[}")
 
-    result = _run("inventory", str(manifest_file), expect_failure=True)
+    result = _run(subcommand, str(manifest_file), expect_failure=True)
     assert result.exit_code == 3
     assert "Error parsing" in result.stderr
 
@@ -184,7 +203,7 @@ def test_inventory_malformed_file(fake, tmp_path: pathlib.Path) -> None:
 def test_inventory_plain_output(fake, tmp_path: pathlib.Path) -> None:
     manifest = Manifest.get_random(fake)
     manifest_file = tmp_path / fake.file_name(extension="yaml")
-    yaml.YAML().dump(manifest.manifest, stream=manifest_file.open("w"))
+    manifest.write(manifest_file)
 
     result = _run("inventory", "--output", "plain", "--no-header", str(manifest_file))
 
@@ -199,7 +218,7 @@ def test_inventory_plain_output(fake, tmp_path: pathlib.Path) -> None:
 def test_inventory_yaml_output(fake, tmp_path: pathlib.Path) -> None:
     manifest = Manifest.get_random(fake)
     manifest_file = tmp_path / fake.file_name(extension="yaml")
-    yaml.YAML().dump(manifest.manifest, stream=manifest_file.open("w"))
+    manifest.write(manifest_file)
 
     result = _run("inventory", "--output", "yaml", str(manifest_file))
 
@@ -210,4 +229,145 @@ def test_inventory_yaml_output(fake, tmp_path: pathlib.Path) -> None:
             "namespace": manifest.namespace,
             "name": manifest.name,
         }
+    ]
+
+
+def test_wait_json_output(
+    fake,
+    tmp_path: pathlib.Path,
+    fake_resource: inventory.ResourceDescriptor,
+    mock_extension: utils.MockExtensionReturn,  # pylint: disable=unused-argument
+) -> None:
+    manifest = Manifest.from_resource(fake_resource)
+    manifest_file = tmp_path / fake.file_name(extension="yaml")
+    manifest.write(manifest_file)
+
+    mock_extension.is_ready.return_value = wait.ReadyResult(
+        fake_resource, True, "ready"
+    )
+
+    result = _run(
+        "wait",
+        "--output",
+        "json",
+        "--poll-interval",
+        "0.1",
+        "--timeout",
+        "0.5",
+        str(manifest_file),
+    )
+
+    summary_line = result.stdout.splitlines()[-1]
+    assert json.loads(summary_line) == [
+        {"resource": dataclasses.asdict(fake_resource), "is_ready": True}
+    ]
+
+
+def test_wait_yaml_output(
+    fake,
+    tmp_path: pathlib.Path,
+    fake_resource: inventory.ResourceDescriptor,
+    mock_extension: utils.MockExtensionReturn,  # pylint: disable=unused-argument
+) -> None:
+    manifest = Manifest.from_resource(fake_resource)
+    manifest_file = tmp_path / fake.file_name(extension="yaml")
+    manifest.write(manifest_file)
+
+    mock_extension.is_ready.return_value = wait.ReadyResult(
+        fake_resource, True, "ready"
+    )
+
+    result = _run(
+        "wait",
+        "--output",
+        "yaml",
+        "--poll-interval",
+        "0.1",
+        "--timeout",
+        "0.5",
+        str(manifest_file),
+    )
+
+    summary_doc = result.stdout.split("\n---\n")[-1]
+    assert yaml.YAML(typ="safe").load(stream=io.StringIO(summary_doc)) == [
+        {"resource": dataclasses.asdict(fake_resource), "is_ready": True}
+    ]
+
+
+def test_wait_plain_output(
+    fake,
+    tmp_path: pathlib.Path,
+    fake_resource: inventory.ResourceDescriptor,
+    mock_extension: utils.MockExtensionReturn,  # pylint: disable=unused-argument
+) -> None:
+    manifest = Manifest.from_resource(fake_resource)
+    manifest_file = tmp_path / fake.file_name(extension="yaml")
+    manifest.write(manifest_file)
+
+    mock_extension.is_ready.return_value = wait.ReadyResult(
+        fake_resource, True, "ready"
+    )
+
+    result = _run(
+        "wait",
+        "--output",
+        "plain",
+        "--poll-interval",
+        "0.1",
+        "--timeout",
+        "0.5",
+        str(manifest_file),
+    )
+
+    raw_summary_table = result.stdout.split("\nSUMMARY:\n")[-1]
+    lines = []
+    table_data_started = False
+    for line in raw_summary_table.splitlines():
+        if line.startswith("-"):
+            table_data_started = True
+            continue
+
+        if table_data_started:
+            # we split the result on whitespace to do the comparison
+            # because tabulate controls the number of spaces between
+            # the fields
+            lines.append(line.split())
+
+    assert lines == [
+        [
+            fake_resource.kind,
+            f"{fake_resource.namespace}/{fake_resource.name}",
+            "Yes",
+        ]
+    ]
+
+
+def test_wait_timeout(
+    fake,
+    tmp_path: pathlib.Path,
+    fake_resource: inventory.ResourceDescriptor,
+    mock_extension: utils.MockExtensionReturn,  # pylint: disable=unused-argument
+) -> None:
+    manifest = Manifest.from_resource(fake_resource)
+    manifest_file = tmp_path / fake.file_name(extension="yaml")
+    manifest.write(manifest_file)
+
+    result = _run(
+        "wait",
+        "--output",
+        "json",
+        "--poll-interval",
+        "0.1",
+        "--timeout",
+        "0.5",
+        str(manifest_file),
+        expect_failure=True,
+    )
+
+    assert result.exit_code == 2
+    assert "timeout" in result.stderr.lower()
+
+    summary_line = result.stdout.splitlines()[-1]
+    assert json.loads(summary_line) == [
+        {"resource": dataclasses.asdict(fake_resource), "is_ready": False}
     ]

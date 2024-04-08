@@ -7,6 +7,7 @@ CLI return codes:
 3: Invalid YAML input
 """
 
+from collections.abc import Iterable
 import dataclasses
 import enum
 import json
@@ -58,6 +59,22 @@ def _warn(msg: str) -> str:
     return click.style(msg, fg="yellow")
 
 
+def _get_resources(
+    filehandles: Iterable[TextIO], default_namespace: str
+) -> list[inventory.ResourceDescriptor]:
+    """CLI convenience wrapper to inventory all resourcs in multiple files."""
+    resources = []
+    for filehandle in filehandles:
+        try:
+            resources.extend(
+                inventory.get_resources(filehandle, default_namespace=default_namespace)
+            )
+        except exceptions.InventoryError as err:
+            _LOG.exception("Error parsing %s: %s", filehandle.name, err)
+            sys.exit(3)
+    return resources
+
+
 @click.group()
 @click.pass_context
 @click.option("-v", "--verbose", count=True, help="Be verbose")
@@ -68,9 +85,9 @@ def cli(ctx: click.Context, verbose: int) -> None:
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = verbose
 
-    if sys.stdout.isatty():
-        ctx.obj["echo"] = click.echo_via_pager  # pragma: nocover
-        ctx.obj["json_kwargs"] = {"indent": 2}  # pragma: nocover
+    if sys.stdout.isatty():  # pragma: nocover
+        ctx.obj["echo"] = click.echo_via_pager
+        ctx.obj["json_kwargs"] = {"indent": 2}
     else:
         ctx.obj["echo"] = click.echo
         ctx.obj["json_kwargs"] = {}
@@ -110,15 +127,7 @@ def _inventory(
     namespace: str,
     filename: tuple[TextIO, ...],
 ) -> None:
-    resources = []
-    for filehandle in filename:
-        try:
-            resources.extend(
-                inventory.get_resources(filehandle, default_namespace=namespace)
-            )
-        except exceptions.InventoryError as err:
-            _LOG.exception("Error parsing %s: %s", filehandle.name, err)
-            sys.exit(3)
+    resources = _get_resources(filename, namespace)
 
     fmt = OutputFormat[output.upper()]
     echo = ctx.obj["echo"]
@@ -185,42 +194,14 @@ def _wait(
     timeout: float,
     filename: tuple[TextIO, ...],
 ) -> None:
-    resources = []
-    for filehandle in filename:
-        resources.extend(
-            inventory.get_resources(filehandle, default_namespace=namespace)
-        )
+    resources = _get_resources(filename, namespace)
 
     fmt = OutputFormat[output.upper()]
-    if sys.stdout.isatty() and fmt == OutputFormat.PLAIN:
-        resource_output_map = {}
-        try:
-            for update in wait.wait_for(
-                resources, interval=poll_interval, timeout=timeout
-            ):
-                if update.is_ready:
-                    msg = f"{update.resource}: {_ok(update.state)}"
-                else:
-                    msg = f"{update.resource}: {_warn(update.state)}"
-                max_row = (
-                    max(resource_output_map.values()) if resource_output_map else -1
-                )
-                if (row := resource_output_map.get(update.resource)) is None:
-                    row = resource_output_map[update.resource] = max_row + 1
-                    click.echo(msg)
-                else:
-                    # we have already printed a row for this
-                    # resource. find the row and update it.
-                    move_up = max_row - row + 1
-                    click.echo(
-                        f"\u001b[{move_up}F\u001b[2K{msg}\u001b[{move_up}E", nl=False
-                    )
-        except TimeoutError as err:
-            _LOG.error(err)
-            sys.exit(2)
-
+    if sys.stdout.isatty() and fmt == OutputFormat.PLAIN:  # pragma:nocover
+        _fancy_wait(resources, poll_interval, timeout)
     else:
         echo = ctx.obj["echo"]
+        is_timeout = False
         resource_states = {}
         try:
             for update in wait.wait_for(
@@ -231,7 +212,11 @@ def _wait(
                         json.dumps(dataclasses.asdict(update), **ctx.obj["json_kwargs"])
                     )
                 elif fmt == OutputFormat.YAML:
-                    echo(yaml.YAML().dump(dataclasses.asdict(update)))
+                    yaml.YAML().dump(
+                        dataclasses.asdict(update),
+                        stream=click.get_text_stream("stdout"),
+                    )
+                    echo("---")
                 elif update.is_ready:
                     echo(f"{update.resource}: {_ok(update.state)}")
                 else:
@@ -239,7 +224,7 @@ def _wait(
                 resource_states[update.resource] = update.is_ready
         except TimeoutError as err:
             _LOG.error(err)
-            sys.exit(2)
+            is_timeout = True
 
         if fmt == OutputFormat.PLAIN:
             echo("")
@@ -257,8 +242,45 @@ def _wait(
 
             echo(tabulate.tabulate(table_data, headers=("Kind", "Resource", "Ready")))
         else:
-            data = [{"resource": k, "is_ready": v} for k, v in resource_states.items()]
+            data = [
+                {"resource": dataclasses.asdict(k), "is_ready": v}
+                for k, v in resource_states.items()
+            ]
             if fmt == OutputFormat.JSON:
                 echo(json.dumps(data, **ctx.obj["json_kwargs"]))
             elif fmt == OutputFormat.YAML:
-                echo(yaml.YAML().dump(data))
+                yaml.YAML().dump(data, stream=click.get_text_stream("stdout"))
+
+        if is_timeout:
+            sys.exit(2)
+
+
+def _fancy_wait(
+    resources: list[inventory.ResourceDescriptor], interval: float, timeout: float
+) -> None:  # pragma:nocover
+    """When stdout is a TTY and output type is `plain`, do ANSI magic.
+
+    This creates a magically updating table of the resources, with
+    colors and other cool stuff.
+    """
+    resource_output_map = {}
+    try:
+        for update in wait.wait_for(resources, interval=interval, timeout=timeout):
+            if update.is_ready:
+                msg = f"{update.resource}: {_ok(update.state)}"
+            else:
+                msg = f"{update.resource}: {_warn(update.state)}"
+            max_row = max(resource_output_map.values()) if resource_output_map else -1
+            if (row := resource_output_map.get(update.resource)) is None:
+                row = resource_output_map[update.resource] = max_row + 1
+                click.echo(msg)
+            else:
+                # we have already printed a row for this
+                # resource. find the row and update it.
+                move_up = max_row - row + 1
+                click.echo(
+                    f"\u001b[{move_up}F\u001b[2K{msg}\u001b[{move_up}E", nl=False
+                )
+    except TimeoutError as err:
+        _LOG.error(err)
+        sys.exit(2)

@@ -42,8 +42,8 @@ def _wait_for_resource(
     result_queue: queue.Queue,
     interval: float,
 ) -> None:
-    result_queue.put(ReadyResult(driver.resource, False, "polling started"))
-    is_ready = False
+    is_ready = ReadyResult(driver.resource, False, "polling started")
+    result_queue.put(is_ready)
 
     while not is_ready:
         try:
