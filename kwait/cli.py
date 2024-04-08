@@ -4,6 +4,7 @@ CLI return codes:
 
 1: Argument parsing failed
 2: Timeout exceeded waiting for resources to become ready
+3: Invalid YAML input
 """
 
 import dataclasses
@@ -17,6 +18,7 @@ import click
 from ruamel import yaml
 import tabulate
 
+from kwait import exceptions
 from kwait import inventory
 from kwait import wait
 
@@ -67,8 +69,8 @@ def cli(ctx: click.Context, verbose: int) -> None:
     ctx.obj["verbose"] = verbose
 
     if sys.stdout.isatty():
-        ctx.obj["echo"] = click.echo_via_pager
-        ctx.obj["json_kwargs"] = {"indent": 2}
+        ctx.obj["echo"] = click.echo_via_pager  # pragma: nocover
+        ctx.obj["json_kwargs"] = {"indent": 2}  # pragma: nocover
     else:
         ctx.obj["echo"] = click.echo
         ctx.obj["json_kwargs"] = {}
@@ -82,6 +84,12 @@ def cli(ctx: click.Context, verbose: int) -> None:
     help="Output format",
     default=OutputFormat.PLAIN.name.lower(),
     type=click.Choice([f.name.lower() for f in OutputFormat]),
+)
+@click.option(
+    "--no-header",
+    help="Suppress the header in the 'plain' output format",
+    is_flag=True,
+    default=False,
 )
 @click.option(
     "-n",
@@ -98,26 +106,40 @@ def cli(ctx: click.Context, verbose: int) -> None:
 def _inventory(
     ctx: click.Context,
     output: str,
+    no_header: bool,
     namespace: str,
     filename: tuple[TextIO, ...],
 ) -> None:
     resources = []
     for filehandle in filename:
-        resources.extend(
-            inventory.get_resources(filehandle, default_namespace=namespace)
-        )
+        try:
+            resources.extend(
+                inventory.get_resources(filehandle, default_namespace=namespace)
+            )
+        except exceptions.InventoryError as err:
+            _LOG.exception("Error parsing %s: %s", filehandle.name, err)
+            sys.exit(3)
 
     fmt = OutputFormat[output.upper()]
     echo = ctx.obj["echo"]
     resources.sort()
     if fmt == OutputFormat.PLAIN:
-        echo("\n".join(str(r) for r in resources))
+        table_data = [
+            (f"{r.namespace}/{r.name}", f"{r.api_version}:{r.kind}") for r in resources
+        ]
+        echo(
+            tabulate.tabulate(
+                table_data,
+                headers=() if no_header else ("Namespace", "Kind"),
+                tablefmt="plain" if no_header else "simple",
+            )
+        )
     else:
         data = [dataclasses.asdict(r) for r in resources]
         if fmt == OutputFormat.JSON:
             echo(json.dumps(data, **ctx.obj["json_kwargs"]))
         if fmt == OutputFormat.YAML:
-            echo(yaml.YAML().dump(data))
+            yaml.YAML().dump(data, stream=click.get_text_stream("stdout"))
 
 
 @cli.command("wait")
