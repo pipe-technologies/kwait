@@ -383,7 +383,7 @@ class TestService(DriverTest):
             "ExternalName",
         ],
     )
-    def test_ready(  # pylint: disable=arguments-differ
+    def test_ready_all_types(
         self, service: models.V1Service, service_type: str
     ) -> None:
         service.spec.type = service_type

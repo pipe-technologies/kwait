@@ -42,12 +42,6 @@ service = "kwait.drivers:Service"
 statefulset = "kwait.drivers:StatefulSet"
 
 [tool.pyright]
-reportPrivateImportUsage = "none"
-# the kubernetes client doesn't provide type hints
-# (https://github.com/kubernetes-client/python/issues/225), and I
-# couldn't get any of the third-party stub packages (e.g.,
-# https://pypi.org/project/kubernetes-stubs-elephant-fork/) to work.
-ignore = ["kwait/drivers.py", "test/test_drivers.py"]
 include = ["kwait", "test"]
 
 [tool.pytest.ini_options]
