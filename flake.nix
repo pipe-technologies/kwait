@@ -28,7 +28,7 @@
 
         devShells.default = pkgs.mkShell {
           inputsFrom = [ self.packages.${system}.kwait ];
-          packages = [ pkgs.poetry self.packages.${system}.kwait ];
+          packages = [ pkgs.poetry ];
         };
       });
 }
