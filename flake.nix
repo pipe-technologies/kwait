@@ -19,13 +19,16 @@
       in
       {
         packages = {
-          myapp = mkPoetryApplication { projectDir = self; };
-          default = self.packages.${system}.myapp;
+          kwait = mkPoetryApplication {
+            projectDir = self;
+            preferWheels = true;
+          };
+          default = self.packages.${system}.kwait;
         };
 
         devShells.default = pkgs.mkShell {
-          inputsFrom = [ self.packages.${system}.myapp ];
-          packages = [ pkgs.poetry ];
+          inputsFrom = [ self.packages.${system}.kwait ];
+          packages = [ pkgs.poetry self.packages.${system}.kwait ];
         };
       });
 }
