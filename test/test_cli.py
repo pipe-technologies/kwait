@@ -190,6 +190,92 @@ def test_inventory_multiple_files(fake, tmp_path: pathlib.Path) -> None:
     )
 
 
+def test_inventory_skip_directory(fake, tmp_path: pathlib.Path) -> None:
+    manifest = Manifest.get_random(fake)
+    subdir = tmp_path / fake.word()
+    subdir.mkdir()
+
+    manifest_file = tmp_path / fake.unique.file_name(extension="yaml")
+    manifest.write(manifest_file)
+    args = ["inventory", "--output", "json", str(subdir), str(manifest_file)]
+
+    for _ in range(3):
+        Manifest.get_random(fake).write(
+            subdir / fake.unique.file_name(extension="yaml")
+        )
+
+    result = _run(*args)
+
+    assert json.loads(result.stdout) == [
+        {
+            "api_version": manifest.api_version,
+            "kind": manifest.kind,
+            "namespace": manifest.namespace,
+            "name": manifest.name,
+        }
+    ]
+
+
+def test_inventory_recursive(fake, tmp_path: pathlib.Path) -> None:
+    manifests = [
+        Manifest.get_random(fake),
+        Manifest.get_random(fake),
+        Manifest.get_random(fake),
+    ]
+    args = ["inventory", "--output", "json", "--recursive", str(tmp_path)]
+    for manifest in manifests:
+        manifest_file = tmp_path / fake.unique.file_name(extension="yaml")
+        manifest.write(manifest_file)
+
+    result = _run(*args)
+
+    assert sorted(json.loads(result.stdout), key=operator.itemgetter("name")) == sorted(
+        [
+            {
+                "api_version": m.api_version,
+                "kind": m.kind,
+                "namespace": m.namespace,
+                "name": m.name,
+            }
+            for m in manifests
+        ],
+        key=operator.itemgetter("name"),
+    )
+
+
+def test_inventory_multiple_recursive(fake, tmp_path: pathlib.Path) -> None:
+    manifests = [
+        Manifest.get_random(fake),
+        Manifest.get_random(fake),
+        Manifest.get_random(fake),
+    ]
+    manifest_dirs = [tmp_path / fake.unique.word(), tmp_path / fake.unique.word()]
+    for manifest_dir in manifest_dirs:
+        manifest_dir.mkdir()
+
+    args = ["inventory", "--output", "json", "--recursive", str(tmp_path)]
+    for i, manifest in enumerate(manifests):
+        manifest_file = manifest_dirs[i % len(manifest_dirs)] / fake.unique.file_name(
+            extension="yaml"
+        )
+        manifest.write(manifest_file)
+
+    result = _run(*args)
+
+    assert sorted(json.loads(result.stdout), key=operator.itemgetter("name")) == sorted(
+        [
+            {
+                "api_version": m.api_version,
+                "kind": m.kind,
+                "namespace": m.namespace,
+                "name": m.name,
+            }
+            for m in manifests
+        ],
+        key=operator.itemgetter("name"),
+    )
+
+
 @pytest.mark.parametrize("subcommand", ["inventory", "wait"])
 def test_malformed_file(fake, tmp_path: pathlib.Path, subcommand: str) -> None:
     manifest_file = tmp_path / fake.file_name(extension="yaml")

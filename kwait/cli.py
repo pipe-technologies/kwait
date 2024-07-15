@@ -1,19 +1,12 @@
-"""Main CLI entrypoint.
-
-CLI return codes:
-
-1: Argument parsing failed
-2: Timeout exceeded waiting for resources to become ready
-3: Invalid YAML input
-"""
+"""Main CLI entrypoint."""
 
 from collections.abc import Iterable
 import dataclasses
 import enum
 import json
 import logging
+import pathlib
 import sys
-from typing import TextIO
 
 import click
 from ruamel import yaml
@@ -24,6 +17,14 @@ from kwait import inventory
 from kwait import wait
 
 _LOG = logging.getLogger(__name__)
+
+
+class ReturnCodes(enum.Enum):
+    """CLI return codes."""
+
+    ARGUMENT_PARSING_FAILED = 1
+    TIMEOUT = 2
+    INVALID_YAML = 3
 
 
 class OutputFormat(enum.Enum):
@@ -60,18 +61,38 @@ def _warn(msg: str) -> str:
 
 
 def _get_resources(
-    filehandles: Iterable[TextIO], default_namespace: str
+    filenames: Iterable[pathlib.Path],
+    default_namespace: str,
+    *,
+    recursive: bool = False,
 ) -> list[inventory.ResourceDescriptor]:
     """CLI convenience wrapper to inventory all resourcs in multiple files."""
     resources = []
-    for filehandle in filehandles:
-        try:
+    for filename in filenames:
+        if recursive and filename.is_dir():
             resources.extend(
-                inventory.get_resources(filehandle, default_namespace=default_namespace)
+                _get_resources(
+                    filename.iterdir(), default_namespace, recursive=recursive
+                )
             )
-        except exceptions.InventoryError as err:
-            _LOG.exception("Error parsing %s: %s", filehandle.name, err)
-            sys.exit(3)
+        elif filename.is_dir():
+            _LOG.warning("Skipping directory %s", filename)
+        else:
+            try:
+                resources.extend(
+                    inventory.get_resources(
+                        # might be a click type hint bug -- pyright
+                        # thinks `click.open_file()` only accepts a
+                        # string, but the docs tell us it accepts a
+                        # `PathLike`, which includes `pathlib.Path`:
+                        # https://click.palletsprojects.com/en/8.1.x/api/#click.open_file
+                        click.open_file(filename),  # type: ignore
+                        default_namespace=default_namespace,
+                    )
+                )
+            except exceptions.InventoryError as err:
+                _LOG.exception("Error parsing %s: %s", filename, err)
+                sys.exit(ReturnCodes.INVALID_YAML.value)
     return resources
 
 
@@ -114,9 +135,16 @@ def cli(ctx: click.Context, verbose: int) -> None:
     help="Default namespace for all resources",
     default="default",
 )
+@click.option(
+    "-R",
+    "--recursive",
+    help="Process the directory recursively",
+    is_flag=True,
+    default=False,
+)
 @click.argument(
     "filename",
-    type=click.File(),
+    type=click.Path(exists=True, allow_dash=True, path_type=pathlib.Path),
     nargs=-1,
     required=True,
 )
@@ -125,9 +153,10 @@ def _inventory(
     output: str,
     no_header: bool,
     namespace: str,
-    filename: tuple[TextIO, ...],
+    recursive: bool,
+    filename: tuple[pathlib.Path, ...],
 ) -> None:
-    resources = _get_resources(filename, namespace)
+    resources = _get_resources(filename, namespace, recursive=recursive)
 
     fmt = OutputFormat[output.upper()]
     echo = ctx.obj["echo"]
@@ -180,9 +209,16 @@ def _inventory(
     help="Timeout for all resources to be ready, in seconds",
     default=600.0,
 )
+@click.option(
+    "-R",
+    "--recursive",
+    help="Process the directory recursively",
+    is_flag=True,
+    default=False,
+)
 @click.argument(
     "filename",
-    type=click.File(),
+    type=click.Path(exists=True, allow_dash=True, path_type=pathlib.Path),
     nargs=-1,
     required=True,
 )
@@ -192,9 +228,10 @@ def _wait(
     namespace: str,
     poll_interval: float,
     timeout: float,
-    filename: tuple[TextIO, ...],
+    recursive: bool,
+    filename: tuple[pathlib.Path, ...],
 ) -> None:
-    resources = _get_resources(filename, namespace)
+    resources = _get_resources(filename, namespace, recursive=recursive)
 
     fmt = OutputFormat[output.upper()]
     if sys.stdout.isatty() and fmt == OutputFormat.PLAIN:  # pragma:nocover
@@ -252,7 +289,7 @@ def _wait(
                 yaml.YAML().dump(data, stream=click.get_text_stream("stdout"))
 
         if is_timeout:
-            sys.exit(2)
+            sys.exit(ReturnCodes.TIMEOUT.value)
 
 
 def _fancy_wait(
@@ -283,4 +320,4 @@ def _fancy_wait(
                 )
     except TimeoutError as err:
         _LOG.error(err)
-        sys.exit(2)
+        sys.exit(ReturnCodes.TIMEOUT.value)
