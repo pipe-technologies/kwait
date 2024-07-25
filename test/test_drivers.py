@@ -225,6 +225,11 @@ class TestDeployment(ReplicasDriverTest):
         deployment.status.conditions = []
         self.basic_test(deployment, state="no conditions")
 
+    def test_status_replicas_none(self) -> None:
+        obj = self.get_object()
+        obj.status.replicas = None
+        self.basic_test(obj, state=f"0/{obj.spec.replicas} replicas exist")
+
 
 class TestPersistentVolumeClaim(DriverTest):
     driver_cls = drivers.PersistentVolumeClaim
