@@ -6,7 +6,7 @@ https://github.com/GoogleCloudPlatform/cloud-builders/blob/746f95b31b8caeac2030c
 
 import abc
 import logging
-from typing import Any
+from typing import Protocol
 
 import kubernetes
 
@@ -14,6 +14,47 @@ from kwait import inventory
 from kwait import wait
 
 _LOG = logging.getLogger(__name__)
+
+
+class MetadataSupportsGeneration(Protocol):
+    """Protocol for a metadata object that supports the `generation` property."""
+
+    generation: str
+
+
+class StatusSupportsGeneration(Protocol):
+    """Protocol for a status that has the `observed_generation` property."""
+
+    observed_generation: str
+
+
+class ObjectSupportsGeneration(Protocol):
+    """Protocol for a k8s object that has a generation."""
+
+    metadata: MetadataSupportsGeneration
+    status: StatusSupportsGeneration
+
+
+class StatusSupportsReplicas(Protocol):
+    """Protocol for a status that has various replica properties."""
+
+    # replicas can only be None on Deployments
+    replicas: int | None
+    ready_replicas: int
+    available_replicas: int
+
+
+class SpecSupportsReplicas(Protocol):
+    """Protocol for a spec that inclues a replica count."""
+
+    replicas: int
+
+
+class ObjectSupportsReplicas(Protocol):
+    """Prtocol for a k8s object that has replicas."""
+
+    status: StatusSupportsReplicas
+    spec: SpecSupportsReplicas
 
 
 class BaseDriver(abc.ABC):
@@ -38,7 +79,9 @@ class BaseDriver(abc.ABC):
         makes sense for the resource type.
         """
 
-    def check_generation(self, obj: Any) -> wait.ReadyResult | None:
+    def check_generation(
+        self, obj: ObjectSupportsGeneration
+    ) -> wait.ReadyResult | None:
         """Check that object generation is correct.
 
         This ensures that the observed generation in status matches
@@ -61,7 +104,9 @@ class BaseDriver(abc.ABC):
             return self.not_ready("wrong generation")
         return None
 
-    def check_replica_count(self, obj: Any) -> wait.ReadyResult | None:
+    def check_replica_count(
+        self, obj: ObjectSupportsReplicas
+    ) -> wait.ReadyResult | None:
         """Ensure that all replicas are available.
 
         This performs three checks, in order, that are relevant to
@@ -119,7 +164,7 @@ class BaseDriver(abc.ABC):
 
         return None
 
-    def replicas_ready(self, obj: Any) -> wait.ReadyResult:
+    def replicas_ready(self, obj: ObjectSupportsReplicas) -> wait.ReadyResult:
         """Helper to get a "ready" status for resources with replicas
 
         Returns a `kwait.wait.ReadyResult` for the resource this
