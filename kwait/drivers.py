@@ -114,20 +114,29 @@ class BaseDriver(abc.ABC):
                 obj.spec.replicas,
             )
             return self.not_ready(
-                f"{obj.status.available_replicas}/{obj.spec.replicas} replicas available",
+                f"{obj.status.available_replicas}/{obj.spec.replicas} replicas available"
             )
 
         return None
 
-    @property
-    def ready(self) -> wait.ReadyResult:
-        """Helper to get a "ready" status.
+    def replicas_ready(self, obj: Any) -> wait.ReadyResult:
+        """Helper to get a "ready" status for resources with replicas
 
         Returns a `kwait.wait.ReadyResult` for the resource this
         driver handles with `is_ready = True` and the message set to
-        `"ready"`.
+        the available replica count.
         """
-        return wait.ReadyResult(self.resource, True, "ready")
+        return self.ready(
+            f"{obj.status.available_replicas}/{obj.spec.replicas} replicas available"
+        )
+
+    def ready(self, message: str = "ready") -> wait.ReadyResult:
+        """Helper to get a "ready" status.
+
+        Returns a `kwait.wait.ReadyResult` for the resource this
+        driver handles with `is_ready = True`.
+        """
+        return wait.ReadyResult(self.resource, True, message)
 
     def not_ready(self, message: str) -> wait.ReadyResult:
         """Helper function to get a "not ready" status.
@@ -211,7 +220,9 @@ class DaemonSet(AppsV1Driver):
                 f"{daemonset.status.number_ready}/{daemonset.status.desired_number_scheduled} pods ready",
             )
 
-        return self.ready
+        return self.ready(
+            f"{daemonset.status.number_ready}/{daemonset.status.desired_number_scheduled} pods ready",
+        )
 
 
 class Deployment(AppsV1Driver):
@@ -274,7 +285,7 @@ class Deployment(AppsV1Driver):
             )
             return self.not_ready(condition.type.lower())
 
-        return self.ready
+        return self.replicas_ready(deployment)
 
 
 class PersistentVolumeClaim(CoreV1Driver):
@@ -297,7 +308,7 @@ class PersistentVolumeClaim(CoreV1Driver):
             _LOG.debug("%s is not bound, status=%s", self.resource, status.phase)
             return self.not_ready(status.phase.lower())
 
-        return self.ready
+        return self.ready(f"ready, status={status.phase}")
 
 
 class Pod(CoreV1Driver):
@@ -326,7 +337,7 @@ class Pod(CoreV1Driver):
             if condition.type == "Ready" and (
                 condition.status == "True" or condition.reason == "PodCompleted"
             ):
-                return self.ready
+                return self.ready()
 
         _LOG.debug(
             "%s has no Ready condition: %s",
@@ -376,7 +387,9 @@ class PodDisruptionBudget(BaseDriver):
                 f"{pdb.status.current_healthy}/{pdb.status.desired_healthy} healthy pods"
             )
 
-        return self.ready
+        return self.ready(
+            f"{pdb.status.current_healthy}/{pdb.status.desired_healthy} healthy pods"
+        )
 
 
 class ReplicaSet(AppsV1Driver):
@@ -415,7 +428,7 @@ class ReplicaSet(AppsV1Driver):
                 )
                 return self.not_ready("replica failure")
 
-        return self.ready
+        return self.replicas_ready(replicaset)
 
 
 class ReplicationController(CoreV1Driver):
@@ -443,7 +456,7 @@ class ReplicationController(CoreV1Driver):
         if (result := self.check_replica_count(controller)) is not None:
             return result
 
-        return self.ready
+        return self.replicas_ready(controller)
 
 
 class Service(CoreV1Driver):
@@ -486,7 +499,7 @@ class Service(CoreV1Driver):
                     )
                     return self.not_ready("no Ingress IP")
 
-        return self.ready
+        return self.ready()
 
 
 class StatefulSet(AppsV1Driver):
@@ -514,4 +527,4 @@ class StatefulSet(AppsV1Driver):
         if (result := self.check_replica_count(controller)) is not None:
             return result
 
-        return self.ready
+        return self.replicas_ready(controller)
