@@ -80,15 +80,19 @@ class BaseDriver(abc.ABC):
             return result
         ```
         """
-        if obj.status.replicas != obj.spec.replicas:
+        status_replicas = obj.status.replicas or 0
+        if (
+            status_replicas  # pylint: disable=consider-using-assignment-expr
+            != obj.spec.replicas
+        ):
             _LOG.debug(
                 "%s has %s/%s replicas",
                 self.resource,
-                obj.status.replicas,
+                status_replicas,
                 obj.spec.replicas,
             )
             return self.not_ready(
-                f"{obj.status.replicas}/{obj.spec.replicas} replicas exist",
+                f"{status_replicas}/{obj.spec.replicas} replicas exist",
             )
 
         if obj.status.ready_replicas != obj.spec.replicas:
