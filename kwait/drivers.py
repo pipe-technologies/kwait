@@ -140,7 +140,9 @@ class BaseDriver(abc.ABC):
                 f"{status_replicas}/{obj.spec.replicas} replicas exist",
             )
 
-        if obj.status.ready_replicas != obj.spec.replicas:
+        # Handles the case in which we desire 0 replicas, in which case ready_replicas may return None
+        ready_replicas = obj.status.ready_replicas or 0
+        if ready_replicas != obj.spec.replicas:
             _LOG.debug(
                 "%s has %s/%s replicas ready",
                 self.resource,
@@ -151,7 +153,9 @@ class BaseDriver(abc.ABC):
                 f"{obj.status.ready_replicas}/{obj.spec.replicas} replicas ready",
             )
 
-        if obj.status.available_replicas != obj.spec.replicas:
+        # Handles the case in which we desire 0 replicas, in which case available_replicas may return None
+        available_replicas = obj.status.available_replicas or 0
+        if available_replicas != obj.spec.replicas:
             _LOG.debug(
                 "%s has %s/%s replicas available",
                 self.resource,
