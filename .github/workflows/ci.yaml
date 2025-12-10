@@ -36,7 +36,7 @@ jobs:
         with:
           poetry-version: 1.8.2
 
-      - uses: actions/cache@v4.0.2
+      - uses: actions/cache@v4
         with:
           path: ~/.cache/pypoetry/virtualenvs
           key: ${{ runner.os }}-poetry-${{ hashFiles('poetry.lock') }}
