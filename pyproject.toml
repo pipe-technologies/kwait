@@ -7,7 +7,7 @@ readme = "README.md"
 packages = [{ include = "kwait" }]
 
 [tool.poetry.dependencies]
-python = "^3.9" # TODO broaden this
+python = "^3.11" # TODO broaden this
 click = "~8.1.7"
 kubernetes = "~29.0.0"
 ruamel-yaml = "~0.18.6"
