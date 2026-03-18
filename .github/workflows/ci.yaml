@@ -26,20 +26,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: 3.11.8
-
-      - name: Set up Poetry
-        uses: Gr1N/setup-poetry@v9
-        with:
-          poetry-version: 1.8.2
-
-      - uses: actions/cache@v4
-        with:
-          path: ~/.cache/pypoetry/virtualenvs
-          key: ${{ runner.os }}-poetry-${{ hashFiles('poetry.lock') }}
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v7
 
       - name: Run linters
         run: just lint
