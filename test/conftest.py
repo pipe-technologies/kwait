@@ -60,13 +60,11 @@ def mock_extension(
     mock_ext = mock.Mock()
     mock_ext.plugin = mock_driver
 
-    with mock.patch(
-        "kubernetes.config.load_kube_config"
-    ) as mock_load_kube_config, mock.patch(
-        "kubernetes.client.ApiClient"
-    ) as mock_api_client, mock.patch(
-        "stevedore.ExtensionManager"
-    ) as mock_ext_mgr:
+    with (
+        mock.patch("kubernetes.config.load_kube_config") as mock_load_kube_config,
+        mock.patch("kubernetes.client.ApiClient") as mock_api_client,
+        mock.patch("stevedore.ExtensionManager") as mock_ext_mgr,
+    ):
         mock_ext_mgr.return_value = [mock_ext]
 
         yield utils.MockExtensionReturn(mock_driver, mock_ext, mock_ext_mgr)

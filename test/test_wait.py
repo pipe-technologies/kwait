@@ -93,9 +93,11 @@ def test_wait_for_multiple(fake) -> None:
         mock_ext.plugin = mock_driver
         extensions.append(mock_ext)
 
-    with mock.patch("kubernetes.config.load_kube_config"), mock.patch(
-        "kubernetes.client.ApiClient"
-    ), mock.patch("stevedore.ExtensionManager") as mock_ext_mgr:
+    with (
+        mock.patch("kubernetes.config.load_kube_config"),
+        mock.patch("kubernetes.client.ApiClient"),
+        mock.patch("stevedore.ExtensionManager") as mock_ext_mgr,
+    ):
         mock_ext_mgr.return_value = extensions
 
         is_ready = wait.wait_for(resources, interval=0.1, timeout=1)

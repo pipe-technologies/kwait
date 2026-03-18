@@ -2,16 +2,16 @@ set ignore-comments
 set fallback
 
 install:
-    poetry install
+    uv sync
 
 lint: install
-    poetry run pyright
-    poetry run pylint kwait test
+    uv run pyright
+    uv run pylint kwait
     just _check_format
 
 format: install
-    poetry run isort --atomic kwait test
-    poetry run black --quiet kwait test
+    uv run isort --atomic src test
+    uv run black --quiet src test
 
 _check_format:
     before=$(git diff | cksum); \
@@ -26,4 +26,4 @@ _check_format:
     fi
 
 test: install
-    poetry run pytest
+    uv run pytest

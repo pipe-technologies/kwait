@@ -83,7 +83,7 @@ def wait_for(
     *,
     interval: float = 5.0,
     timeout: float = 600.0,
-) -> Generator[ReadyResult, None, None]:
+) -> Generator[ReadyResult]:
     """Wait for a set of resources to be ready."""
     kubernetes.config.load_kube_config()
     client = kubernetes.client.ApiClient()
