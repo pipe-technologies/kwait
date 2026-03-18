@@ -1,34 +1,99 @@
+# This file was generated with:
+# nix flake init --template github:pyproject-nix/uv2nix#hello-world
 {
   description = "Intelligently wait for all resources in a Kubernetes manifest to be 'ready,' whatever that means";
 
   inputs = {
-    flake-utils.url = "github:numtide/flake-utils";
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    poetry2nix = {
-      url = "github:nix-community/poetry2nix";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+
+    pyproject-nix = {
+      url = "github:pyproject-nix/pyproject.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    uv2nix = {
+      url = "github:pyproject-nix/uv2nix";
+      inputs.pyproject-nix.follows = "pyproject-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    pyproject-build-systems = {
+      url = "github:pyproject-nix/build-system-pkgs";
+      inputs.pyproject-nix.follows = "pyproject-nix";
+      inputs.uv2nix.follows = "uv2nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
-  outputs = { self, nixpkgs, flake-utils, poetry2nix }:
-    flake-utils.lib.eachDefaultSystem (system:
-      let
-        # see https://github.com/nix-community/poetry2nix/tree/master#api for more functions and examples.
-        pkgs = nixpkgs.legacyPackages.${system};
-        inherit (poetry2nix.lib.mkPoetry2Nix { inherit pkgs; }) mkPoetryApplication;
-      in
-      {
-        packages = {
-          kwait = mkPoetryApplication {
-            projectDir = self;
-            preferWheels = true;
-          };
-          default = self.packages.${system}.kwait;
-        };
+  outputs =
+    {
+      nixpkgs,
+      pyproject-nix,
+      uv2nix,
+      pyproject-build-systems,
+      ...
+    }:
+    let
+      inherit (nixpkgs) lib;
+      forAllSystems = lib.genAttrs lib.systems.flakeExposed;
 
-        devShells.default = pkgs.mkShell {
-          inputsFrom = [ self.packages.${system}.kwait ];
-          packages = [ pkgs.poetry ];
-        };
+      workspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ./.; };
+
+      overlay = workspace.mkPyprojectOverlay {
+        sourcePreference = "wheel";
+      };
+
+      editableOverlay = workspace.mkEditablePyprojectOverlay {
+        root = "$REPO_ROOT";
+      };
+
+      pythonSets = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+          python = pkgs.python3;
+        in
+        (pkgs.callPackage pyproject-nix.build.packages {
+          inherit python;
+        }).overrideScope
+          (
+            lib.composeManyExtensions [
+              pyproject-build-systems.overlays.wheel
+              overlay
+            ]
+          )
+      );
+
+    in
+    {
+      devShells = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+          pythonSet = pythonSets.${system}.overrideScope editableOverlay;
+          virtualenv = pythonSet.mkVirtualEnv "hello-world-dev-env" workspace.deps.all;
+        in
+        {
+          default = pkgs.mkShell {
+            packages = [
+              virtualenv
+              pkgs.uv
+            ];
+            env = {
+              UV_NO_SYNC = "1";
+              UV_PYTHON = pythonSet.python.interpreter;
+              UV_PYTHON_DOWNLOADS = "never";
+            };
+            shellHook = ''
+              unset PYTHONPATH
+              export REPO_ROOT=$(git rev-parse --show-toplevel)
+            '';
+          };
+        }
+      );
+
+      packages = forAllSystems (system: {
+        default = pythonSets.${system}.mkVirtualEnv "hello-world-env" workspace.deps.default;
       });
+    };
 }

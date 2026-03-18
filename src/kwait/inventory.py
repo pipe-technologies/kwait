@@ -27,7 +27,7 @@ class ResourceDescriptor:
 
 def get_resources(
     stream: IO, default_namespace: str = "default"
-) -> Generator[ResourceDescriptor, None, None]:
+) -> Generator[ResourceDescriptor]:
     """Yield all resources that are defined in a stream of k8s manifests."""
     try:
         for manifest in yaml.YAML(typ="safe").load_all(stream):
